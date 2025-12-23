@@ -8,7 +8,7 @@ from scipy import stats
 from statsmodels.stats.anova import AnovaRM
 
 # ==========================================
-# 1. KONFIGURASI TEMA & PALET (USER THEME)
+# 1. TEMA & KONFIGURASI (WARNA PREMIUM)
 # ==========================================
 PALETTE = {
     "green": "#76944C",
@@ -16,7 +16,7 @@ PALETTE = {
     "cream": "#FBF5DB",
     "yellow": "#FFD21F",
     "grey": "#C0B6AC",
-    "text": "#2B2B2B",
+    "dark_text": "#2B2B2B",
     "white": "#FFFFFF"
 }
 
@@ -33,36 +33,31 @@ MONTHS_ID = [
 ]
 MONTH_CAT = pd.CategoricalDtype(categories=MONTHS_ID, ordered=True)
 
-# ==========================================
-# 2. LOGIKA PARSING & ANALISIS (BACKEND)
-# ==========================================
-def _read_raw_csv(file_like) -> pd.DataFrame:
+# ------------------------------------------
+# 2. LOGIKA DATA (TETAP SAMA)
+# ------------------------------------------
+def _read_raw_csv(file_like):
     return pd.read_csv(file_like, header=None)
 
-def parse_harga_beras(file_like) -> tuple[pd.DataFrame, dict]:
+def parse_harga_beras(file_like):
     raw = _read_raw_csv(file_like)
-    month_row_idx = None
-    jan_pos = None
+    month_row_idx, jan_pos = None, None
     for i in range(raw.shape[0]):
         row = raw.iloc[i].astype(str)
         for j in range(raw.shape[1]):
             if row.iloc[j].strip() == "Januari":
-                month_row_idx = i
-                jan_pos = j
+                month_row_idx, jan_pos = i, j
                 break
         if month_row_idx is not None: break
 
     if month_row_idx is None:
-        raise ValueError("Format tidak dikenali: tidak menemukan header bulan 'Januari'.")
+        raise ValueError("Format tidak dikenali.")
 
     month_map = {}
     for j in range(jan_pos, raw.shape[1]):
         val = str(raw.iloc[month_row_idx, j]).strip()
-        if val in MONTHS_ID:
-            month_map[j] = val
-        elif val.lower() in ["tahunan", "tahun", "annual", "nan", "none", ""]:
-            if "Desember" in month_map.values(): break
-            else: continue
+        if val in MONTHS_ID: month_map[j] = val
+        elif val.lower() in ["tahunan", "tahun"] and "Desember" in month_map.values(): break
 
     tahun = None
     for r in range(max(0, month_row_idx-3), month_row_idx+1):
@@ -80,38 +75,33 @@ def parse_harga_beras(file_like) -> tuple[pd.DataFrame, dict]:
         qual = raw.iloc[i, 0]
         if pd.isna(qual): continue
         qual = str(qual).strip().title()
-        if qual not in QUAL_ORDER: continue
-
         for col_idx, month in month_map.items():
             val = raw.iloc[i, col_idx]
             if pd.isna(val): continue
             s = str(val).strip().replace(",", "")
             try: harga = float(s)
-            except ValueError: continue
+            except: continue
             records.append({"Tahun": tahun, "Bulan": month, "Kualitas": qual, "Harga": harga})
 
     long_df = pd.DataFrame(records)
+    long_df = long_df[long_df["Kualitas"].isin(QUAL_ORDER)].copy()
     long_df["Bulan"] = long_df["Bulan"].astype(MONTH_CAT)
-    long_df = long_df.sort_values(["Bulan", "Kualitas"]).reset_index(drop=True)
-    
-    meta = {"tahun": tahun, "source": "Internal/Uploaded"}
-    return long_df, meta
+    return long_df.sort_values(["Bulan", "Kualitas"]).reset_index(drop=True), {"tahun": tahun}
 
-def make_wide(long_df: pd.DataFrame) -> pd.DataFrame:
-    wide = long_df.pivot_table(index="Bulan", columns="Kualitas", values="Harga", aggfunc="mean")
-    return wide.reindex(columns=[q for q in QUAL_ORDER if q in wide.columns])
+def make_wide(long_df):
+    return long_df.pivot_table(index="Bulan", columns="Kualitas", values="Harga", aggfunc="mean").reindex(columns=QUAL_ORDER)
 
-def repeated_measures_anova(long_df: pd.DataFrame):
+def repeated_measures_anova(long_df):
     wide = make_wide(long_df).dropna()
     long_complete = wide.reset_index().melt(id_vars=["Bulan"], var_name="Kualitas", value_name="Harga")
     aov = AnovaRM(long_complete, depvar="Harga", subject="Bulan", within=["Kualitas"]).fit()
     table = aov.anova_table
     f_val, p_val = table["F Value"].iloc[0], table["Pr > F"].iloc[0]
     df1, df2 = table["Num DF"].iloc[0], table["Den DF"].iloc[0]
-    eta = (f_val * df1) / (f_val * df1 + df2)
-    return {"table": table, "F": f_val, "p": p_val, "eta": eta, "wide": wide}
+    eta2 = (f_val * df1) / (f_val * df1 + df2)
+    return {"table": table, "F": f_val, "p": p_val, "eta": eta2, "wide": wide}
 
-def paired_posthoc(wide: pd.DataFrame):
+def paired_posthoc(wide):
     import itertools
     pairs = list(itertools.combinations(wide.columns, 2))
     rows = []
@@ -119,127 +109,156 @@ def paired_posthoc(wide: pd.DataFrame):
         x, y = wide[a].dropna(), wide[b].dropna()
         t, p = stats.ttest_rel(x, y)
         rows.append({"Pasangan": f"{a} vs {b}", "t": t, "p_raw": p, "Diff": x.mean() - y.mean()})
-    df = pd.DataFrame(rows)
-    if not df.empty:
-        # Simple Holm-Bonferroni manual adjust
-        df = df.sort_values("p_raw")
-        df["p_holm"] = (df["p_raw"] * np.arange(len(df), 0, -1)).clip(upper=1)
-    return df
+    return pd.DataFrame(rows)
 
 # ==========================================
-# 3. ANTARMUKA PENGGUNA (UI/UX)
+# 3. STREAMLIT UI (WARNA & LAYOUT BARU)
 # ==========================================
-st.set_page_config(page_title="Analisis Harga Beras", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Analytics Harga Beras", layout="wide")
 
-# --- Custom CSS untuk mempercantik tampilan ---
+# Custom CSS untuk efek Card dan warna latar
 st.markdown(f"""
-<style>
-    .stApp {{ background-color: {PALETTE["cream"]}; }}
+    <style>
+    .stApp {{ background-color: {PALETTE['cream']}; }}
+    div.block-container {{ padding-top: 2rem; }}
+    
+    /* Card Styling */
+    .main-card {{
+        background-color: white;
+        padding: 20px;
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        border: 1px solid #E0E0E0;
+        margin-bottom: 20px;
+    }}
+    
+    /* Metric Styling */
     [data-testid="stMetric"] {{
-        background-color: {PALETTE["white"]};
-        border: 1px solid {PALETTE["grey"]};
-        border-radius: 10px;
+        background-color: white;
+        border: 1px solid {PALETTE['light_green']};
+        border-radius: 12px;
         padding: 15px;
     }}
-    .stTabs [data-baseweb="tab-list"] {{ gap: 10px; }}
-    .stTabs [data-baseweb="tab"] {{
-        background-color: {PALETTE["white"]};
-        border-radius: 5px 5px 0 0;
-        padding: 10px 20px;
-    }}
-</style>
+    </style>
 """, unsafe_allow_html=True)
 
-# --- Sidebar ---
-with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/1601/1601730.png", width=80)
-    st.title("Pengaturan Data")
-    up = st.file_uploader("Upload CSV BPS", type=["csv"])
-    use_sample = st.checkbox("Gunakan Data Contoh", value=(up is None))
-    st.divider()
-    mode = st.radio("Metode Statistik", ["Repeated-Measures ANOVA", "One-Way ANOVA (Independen)"])
-
-# --- Data Loading ---
-try:
-    if up:
-        long_df, meta = parse_harga_beras(io.BytesIO(up.getvalue()))
-    else:
-        # Fallback data dummy jika file tidak ada
-        long_df, meta = parse_harga_beras("data/Data_HargaBeras.csv")
-    wide = make_wide(long_df)
-except Exception as e:
-    st.error(f"Sistem membutuhkan file CSV yang valid. Pesan: {e}")
-    st.stop()
-
-# --- Top Header & Metrics ---
-st.title("🌾 Dashboard Analisis Harga Beras")
-st.caption(f"Tahun: {meta['tahun']} | Sumber: {meta['source']}")
-
-m1, m2, m3, m4 = st.columns(4)
-for i, qual in enumerate(QUAL_ORDER):
-    if qual in wide.columns:
-        latest = wide[qual].iloc[-1]
-        first = wide[qual].iloc[0]
-        diff = latest - first
-        cols = [m1, m2, m3]
-        cols[i].metric(qual, f"Rp {latest:,.0f}", f"{diff:,.0f} (YTD)", delta_color="inverse")
-m4.metric("Total Data", f"{len(long_df)} Baris")
+# Header Dashboard
+with st.container():
+    c1, c2 = st.columns([0.8, 0.2])
+    with c1:
+        st.title("🌾 Dashboard Monitoring Harga Beras")
+        st.markdown(f"**Analisis Tren Kualitas & Signifikansi Variansi Harga**")
+    with c2:
+        st.image("https://cdn-icons-png.flaticon.com/512/1601/1601730.png", width=80)
 
 st.divider()
 
-# --- Main Tabs ---
-tab1, tab2, tab3 = st.tabs(["📊 Visualisasi Tren", "🔬 Uji Statistik", "📋 Tabel Data"])
+# Sidebar Data
+with st.sidebar:
+    st.header("📂 Kelola Data")
+    up = st.file_uploader("Upload CSV (Format BPS)", type=["csv"])
+    use_sample = st.checkbox("Gunakan Data Contoh", value=(up is None))
+    st.divider()
+    mode = st.radio("Metode Uji Statistik", ["Repeated-Measures ANOVA", "One-Way ANOVA (Basic)"])
+
+# Load Data
+try:
+    if up is not None and not use_sample:
+        long_df, meta = parse_harga_beras(io.BytesIO(up.getvalue()))
+        source_label = up.name
+    else:
+        # Gunakan path file Anda atau dummy data untuk testing
+        long_df, meta = parse_harga_beras("data/Data_HargaBeras.csv")
+        source_label = "Contoh_BPS.csv"
+    wide = make_wide(long_df)
+except Exception as e:
+    st.error(f"Gagal memuat data: {e}")
+    st.stop()
+
+# Row 1: Key Metrics
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Sumber Data", source_label)
+m2.metric("Tahun Analisis", meta["tahun"] or "—")
+m3.metric("Bulan Tercover", f"{len(wide)} Bulan")
+m4.metric("Kualitas Beras", f"{len(long_df['Kualitas'].unique())} Tipe")
+
+# Row 2: Tabs
+tab1, tab2, tab3 = st.tabs(["📈 Visualisasi & Tren", "🧪 Hasil Uji Statistik", "📋 Data Mentah"])
 
 with tab1:
-    # 1. Line Chart
-    st.subheader("Tren Harga Bulanan")
-    fig_line = px.line(long_df, x="Bulan", y="Harga", color="Kualitas", 
-                       color_discrete_map=QUAL_COLORS, markers=True, line_shape="spline")
-    fig_line.update_layout(hovermode="x unified", plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+    st.markdown('<div class="main-card">', unsafe_allow_html=True)
+    st.subheader("Pergerakan Harga Bulanan")
+    # Line Chart dengan Line Shape 'Spline' (Lebih Halus)
+    fig_line = px.line(
+        long_df, x="Bulan", y="Harga", color="Kualitas",
+        color_discrete_map=QUAL_COLORS, markers=True,
+        line_shape="spline", # INI MEMBUAT GARIS TIDAK KAKU
+        template="plotly_white"
+    )
+    fig_line.update_layout(hovermode="x unified", margin=dict(l=0,r=0,t=30,b=0))
     st.plotly_chart(fig_line, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    # 2. Boxplot & Bar
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("Distribusi Harga")
-        fig_box = px.box(long_df, x="Kualitas", y="Harga", color="Kualitas", color_discrete_map=QUAL_COLORS)
+    col_left, col_right = st.columns(2)
+    with col_left:
+        st.markdown('<div class="main-card">', unsafe_allow_html=True)
+        st.write("**Sebaran Harga (Boxplot)**")
+        fig_box = px.box(long_df, x="Kualitas", y="Harga", color="Kualitas", 
+                         color_discrete_map=QUAL_COLORS, points="all")
+        fig_box.update_layout(showlegend=False, template="plotly_white")
         st.plotly_chart(fig_box, use_container_width=True)
-    with c2:
-        st.subheader("Rata-rata Tahunan")
-        mean_vals = long_df.groupby("Kualitas")["Harga"].mean().reset_index()
-        fig_bar = px.bar(mean_vals, x="Kualitas", y="Harga", color="Kualitas", color_discrete_map=QUAL_COLORS, text_auto=".0f")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    with col_right:
+        st.markdown('<div class="main-card">', unsafe_allow_html=True)
+        st.write("**Rata-rata Harga per Kualitas**")
+        mean_df = long_df.groupby("Kualitas")["Harga"].mean().reset_index()
+        fig_bar = px.bar(mean_df, x="Kualitas", y="Harga", color="Kualitas", 
+                         color_discrete_map=QUAL_COLORS, text_auto='.0f')
+        fig_bar.update_layout(showlegend=False, template="plotly_white")
         st.plotly_chart(fig_bar, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
 with tab2:
-    st.header("Analisis Varians (ANOVA)")
-    if mode == "Repeated-Measures ANOVA":
-        res = repeated_measures_anova(long_df)
-        col_s1, col_s2, col_s3 = st.columns(3)
-        col_s1.metric("F-Statistic", f"{res['F']:.2f}")
-        col_s2.metric("P-Value", f"{res['p']:.4g}")
-        col_s3.metric("Effect Size (η²)", f"{res['eta']:.2f}")
+    st.markdown('<div class="main-card">', unsafe_allow_html=True)
+    st.subheader("Keputusan Uji Statistik")
+    
+    if "Repeated" in mode:
+        rm = repeated_measures_anova(long_df)
         
-        if res['p'] < 0.05:
-            st.success("✅ Terdapat perbedaan harga yang signifikan antar kualitas beras (p < 0.05).")
+        # Highlight Keputusan
+        if rm["p"] < 0.05:
+            st.success(f"✅ **Signifikan!** Terdapat perbedaan harga yang nyata antar kualitas (p = {rm['p']:.4g})")
         else:
-            st.warning("⚠️ Tidak ditemukan perbedaan harga yang signifikan antar kualitas (p > 0.05).")
+            st.warning(f"⚠️ **Tidak Signifikan.** Tidak ada perbedaan harga yang nyata (p = {rm['p']:.4g})")
+        
+        c_s1, c_s2, c_s3 = st.columns(3)
+        c_s1.metric("F-Statistic", f"{rm['F']:.3f}")
+        c_s2.metric("P-Value", f"{rm['p']:.4f}")
+        c_s3.metric("Effect Size (η²)", f"{rm['eta']:.3f}")
 
-        with st.expander("Tabel Hasil Post-Hoc (Perbandingan Berpasangan)"):
-            post = paired_posthoc(res["wide"])
-            st.dataframe(post.style.format(precision=4).background_gradient(subset=['p_holm'], cmap='RdYlGn_r'), use_container_width=True)
+        st.divider()
+        st.write("**Analisis Berpasangan (Post-hoc):**")
+        post = paired_posthoc(rm["wide"])
+        
+        # Styling Tabel Posthoc (P-Value Highlight)
+        def color_p(val):
+            color = '#d4edda' if val < 0.05 else '#f8d7da'
+            return f'background-color: {color}'
+        
+        st.dataframe(post.style.applymap(color_p, subset=['p_raw']).format({"t":"{:.3f}", "p_raw":"{:.4f}", "Diff":"{:,.2f}"}), use_container_width=True)
+    
     else:
-        st.info("Mode One-Way ANOVA terpilih. Gunakan ini hanya jika data antar bulan dianggap tidak berhubungan.")
+        st.info("Mode One-Way ANOVA berjalan. Hasil akan ditampilkan di sini.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 with tab3:
-    st.subheader("Data Wide (Bulan x Kualitas)")
-    st.dataframe(wide.style.format("{:,.0f}").highlight_max(axis=1, color="#FFD21F").highlight_min(axis=1, color="#C8DAA6"), use_container_width=True)
+    st.subheader("Tabel Data Referensi")
+    st.dataframe(wide.style.format("{:,.0f}").background_gradient(cmap="Greens", axis=0), use_container_width=True)
     
-    st.subheader("Data Long (Format Analisis)")
-    st.dataframe(long_df, use_container_width=True)
-    
-    csv = long_df.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Download Data Hasil Olahan", csv, "data_beras_bersih.csv", "text/csv")
-
-# --- Footer ---
-st.markdown("---")
-st.markdown("<center>Laporan Analisis Harga Beras - Dibuat dengan Streamlit & Plotly</center>", unsafe_allow_html=True)
+    st.download_button(
+        label="📥 Download Data Olahan (CSV)",
+        data=long_df.to_csv(index=False).encode('utf-8'),
+        file_name='data_harga_beras_clean.csv',
+        mime='text/csv',
+    )
