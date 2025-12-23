@@ -1,133 +1,111 @@
 import io
 import pandas as pd
 import numpy as np
-import streamlit as st  # Tambahkan ini
+import streamlit as st
 import matplotlib.pyplot as plt
-import statsmodels.api as sm
-import statsmodels.formula.api as smf
+import plotly.express as px
 from scipy import stats
-from statsmodels.stats.multitest import multipletests
+import statsmodels.api as sm
+from statsmodels.formula.api import ols
+from statsmodels.stats.anova import anova_lm
 
-# Konfigurasi Font untuk Streamlit agar rapi
-plt.rcParams['font.family'] = 'serif'
+# ==========================================
+# 1. KONFIGURASI TEMA & WARNA
+# ==========================================
+CHART_PALETTE = {
+    "moss_green": "#76944C", "light_sage": "#C8DAA6", "cream": "#FBF5DB",
+    "honey_yellow": "#FFD21F", "warm_grey": "#C0B6AC", "dark_text": "#2F3632",
+}
+QUAL_COLORS = {"Premium": "#76944C", "Medium": "#FFD21F", "Pecah": "#C0B6AC"}
+MONTHS_ID = ["Januari","Februari","Maret","April","Mei","Juni",
+             "Juli","Agustus","September","Oktober","November","Desember"]
+MONTH_CAT = pd.CategoricalDtype(categories=MONTHS_ID, ordered=True)
 
-# Judul Dashboard
-st.title("Analisis Statistik Harga Beras")
+# ==========================================
+# 2. UI & FONT TIMES NEW ROMAN
+# ==========================================
+st.set_page_config(page_title="Analisis Harga Beras", layout="wide")
 
-# --- PARAMETER ---
-ALPHA = 0.05
-KEEP = ["premium", "medium", "pecah"]
+st.markdown(f"""
+<style>
+    html, body, [class*="st-"] {{ font-family: "Times New Roman", Times, serif !important; }}
+    .stApp {{ background-color: {CHART_PALETTE['cream']}; color: {CHART_PALETTE['dark_text']}; }}
+    .header-box {{
+        background: linear-gradient(135deg, {CHART_PALETTE['moss_green']} 0%, {CHART_PALETTE['light_sage']} 100%);
+        padding: 2.5rem; border-radius: 20px; color: white; text-align: center; margin-bottom: 2rem;
+    }}
+    div[data-testid="stMetric"] {{
+        background: white; border-radius: 15px; padding: 20px; 
+        border-bottom: 6px solid {CHART_PALETTE['honey_yellow']};
+        min-width: fit-content !important;
+    }}
+    div[data-testid="stMetricValue"] {{ font-size: 1.8rem !important; white-space: nowrap !important; }}
+</style>
+""", unsafe_allow_html=True)
 
-def keputusan_normal(p, alpha=0.05):
-    return "NORMAL" if p >= alpha else "TIDAK NORMAL"
-
-def keputusan_homogen(p, alpha=0.05):
-    return "HOMOGEN" if p >= alpha else "TIDAK HOMOGEN"
-
-# --- 1) DATA LOADING ---
-# Menggunakan file uploader agar lebih fleksibel di Streamlit
-uploaded_file = st.sidebar.file_uploader("Unggah file Data_HargaBeras.csv", type=["csv"])
-
-if uploaded_file is not None:
-    raw = pd.read_csv(uploaded_file, header=None)
-
-    # Deteksi Baris Bulan
-    idx_bulan = raw.apply(
-        lambda r: r.astype(str).str.contains(r"\bJanuari\b", case=False, na=False).any(),
-        axis=1
-    ).idxmax()
-
-    bulan = raw.loc[idx_bulan, 1:12].tolist()
+# ==========================================
+# 3. LOGIKA PEMROSESAN DATA
+# ==========================================
+def process_data(file):
+    raw = pd.read_csv(file, header=None)
+    idx_bulan = raw.apply(lambda r: r.astype(str).str.contains(r"\bJanuari\b", na=False).any(), axis=1).idxmax()
+    bulan_cols = raw.loc[idx_bulan, 1:12].tolist()
     
-    # Preprocessing
     wide = raw.loc[idx_bulan + 1:, [0] + list(range(1, 13))].copy()
-    wide.columns = ["kualitas"] + bulan
-    wide["kualitas"] = wide["kualitas"].astype(str).str.strip()
-    wide = wide[wide["kualitas"].str.lower().isin(KEEP)].copy()
-
-    for b in bulan:
-        wide[b] = pd.to_numeric(wide[b], errors="coerce")
-
-    long = wide.melt(
-        id_vars="kualitas",
-        value_vars=bulan,
-        var_name="bulan",
-        value_name="harga"
-    ).dropna(subset=["harga"]).copy()
-
-    long["bulan"] = pd.Categorical(long["bulan"], categories=bulan, ordered=True)
-    long["kualitas"] = long["kualitas"].str.strip().str.title()
-    long = long.sort_values(["bulan", "kualitas"]).reset_index(drop=True)
-
-    # --- 2) EDA DISPLAY ---
-    st.header("1. Exploratory Data Analysis (EDA)")
+    wide.columns = ["Kualitas"] + bulan_cols
+    wide["Kualitas"] = wide["Kualitas"].astype(str).str.strip().str.title()
+    wide = wide[wide["Kualitas"].isin(["Premium", "Medium", "Pecah"])].copy()
     
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Tren Harga")
-        fig1, ax1 = plt.subplots()
-        pivot = long.pivot_table(index="bulan", columns="kualitas", values="harga")
-        pivot.plot(ax=ax1, marker='o')
-        plt.xticks(rotation=45)
-        st.pyplot(fig1) # Gunakan st.pyplot pengganti plt.show()
-
-    with col2:
-        st.subheader("Sebaran Harga (Boxplot)")
-        fig2, ax2 = plt.subplots()
-        kvals = sorted(long["kualitas"].unique())
-        data_plot = [long.loc[long["kualitas"] == k, "harga"].values for k in kvals]
-        ax2.boxplot(data_plot, labels=kvals)
-        st.pyplot(fig2)
-
-    # --- 3) UJI NORMALITAS & HOMOGENITAS ---
-    st.header("2. Uji Asumsi ANOVA")
+    for b in bulan_cols: wide[b] = pd.to_numeric(wide[b], errors="coerce")
     
-    # Normalitas Residual
-    model = smf.ols("harga ~ C(kualitas) + C(bulan)", data=long).fit()
-    infl = model.get_influence()
-    resid_stud = infl.resid_studentized_internal
-    p_sh = stats.shapiro(resid_stud).pvalue
+    long = wide.melt(id_vars="Kualitas", var_name="Bulan", value_name="Harga").dropna()
+    long["Bulan"] = pd.Categorical(long["Bulan"], categories=MONTHS_ID, ordered=True)
+    return long.sort_values(["Bulan", "Kualitas"]), wide
+
+# ==========================================
+# 4. MAIN APP
+# ==========================================
+st.markdown('<div class="header-box"><h1>Dashboard Analisis Harga Beras</h1><p>Metode Statistik: Randomized Complete Block Design (RCBD)</p></div>', unsafe_allow_html=True)
+
+with st.sidebar:
+    st.header("📂 Menu Data")
+    up = st.file_uploader("Upload CSV BPS", type=["csv"])
+
+if up:
+    df_long, df_wide = process_data(up)
     
-    st.write(f"**Uji Shapiro-Wilk (Residual):** p-value = {p_sh:.6f} ({keputusan_normal(p_sh)})")
-    
-    fig3 = sm.qqplot(resid_stud, line="45")
-    plt.title("Q-Q Plot")
-    st.pyplot(fig3)
+    # Metrik Utama
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Periode Data", "Tahun 2024")
+    m2.metric("Rerata Premium", f"Rp {df_long[df_long['Kualitas']=='Premium']['Harga'].mean():,.0f}")
+    m3.metric("Rerata Medium", f"Rp {df_long[df_long['Kualitas']=='Medium']['Harga'].mean():,.0f}")
+    m4.metric("Rerata Pecah", f"Rp {df_long[df_long['Kualitas']=='Pecah']['Harga'].mean():,.0f}")
 
-    # --- 4) TABEL ANOVA ---
-    st.header("3. Hasil ANOVA (RCBD)")
-    anova_tbl = sm.stats.anova_lm(model, typ=2)
-    st.table(anova_tbl)
+    tab1, tab2, tab3 = st.tabs(["📊 Visualisasi", "📋 Matriks Data", "🔬 Statistik RCBD"])
 
-    # --- 5) POST-HOC ---
-    st.header("4. Post-Hoc Test (Holm)")
-    names = model.params.index.tolist()
-    
-    def ttest_calc(weights):
-        w = np.zeros(len(names))
-        for nm, val in weights.items():
-            w[names.index(nm)] = val
-        res = model.t_test(w)
-        return float(res.effect), float(res.tvalue), float(res.pvalue)
+    with tab1:
+        fig_line = px.line(df_long, x="Bulan", y="Harga", color="Kualitas", color_discrete_map=QUAL_COLORS, markers=True)
+        fig_line.update_layout(font_family="Times New Roman", plot_bgcolor='white')
+        st.plotly_chart(fig_line, use_container_width=True)
 
-    tests = [
-        ("Pecah - Medium",   {"C(kualitas)[T.Pecah]": 1.0}),
-        ("Premium - Medium", {"C(kualitas)[T.Premium]": 1.0}),
-        ("Premium - Pecah",  {"C(kualitas)[T.Premium]": 1.0, "C(kualitas)[T.Pecah]": -1.0}),
-    ]
+    with tab2:
+        st.dataframe(df_wide.set_index("Kualitas").style.format("{:,.0f}"))
 
-    rows, pvals = [], []
-    for label, wd in tests:
-        eff, t, p = ttest_calc(wd)
-        rows.append([label, eff, t, p])
-        pvals.append(p)
-
-    rej, p_adj, _, _ = multipletests(pvals, alpha=ALPHA, method="holm")
-    
-    post_hoc_df = pd.DataFrame(rows, columns=["Pasangan", "Diff", "T-Stat", "P-Value"])
-    post_hoc_df["P-Adj (Holm)"] = p_adj
-    post_hoc_df["Signifikan"] = rej
-    st.dataframe(post_hoc_df)
+    with tab3:
+        st.subheader("Analisis Ragam (ANOVA RCBD)")
+        model = ols('Harga ~ C(Kualitas) + C(Bulan)', data=df_long).fit()
+        aov_table = anova_lm(model, typ=2)
+        
+        st.table(aov_table.style.format("{:.4f}"))
+        
+        # Plot Residual menggunakan Matplotlib (Font Times New Roman)
+        st.subheader("Uji Normalitas Residual")
+        fig_res, ax_res = plt.subplots()
+        stats.probplot(model.resid, dist="norm", plot=ax_res)
+        ax_res.set_title("Normal Q-Q Plot", fontfamily="serif")
+        plt.setp(ax_res.get_xticklabels(), fontfamily="serif")
+        plt.setp(ax_res.get_yticklabels(), fontfamily="serif")
+        st.pyplot(fig_res)
 
 else:
-    st.warning("Silakan unggah file CSV di sidebar untuk memulai.")
+    st.info("Silakan unggah file CSV data harga beras melalui sidebar.")
