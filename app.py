@@ -10,7 +10,7 @@ from statsmodels.stats.anova import anova_lm
 from statsmodels.stats.multitest import multipletests
 
 # ==========================================
-# 1. KONFIGURASI TEMA & WARNA (PALETTE)
+# 1. KONFIGURASI TEMA & WARNA (BERDASARKAN PALET IJOO.JPEG)
 # ==========================================
 CHART_PALETTE = {
     "moss_green": "#76944C",    
@@ -22,8 +22,16 @@ CHART_PALETTE = {
 }
 
 QUAL_ORDER = ["Premium", "Medium", "Pecah"]
-QUAL_COLORS = {"Premium": "#76944C", "Medium": "#FFD21F", "Pecah": "#C0B6AC"}
-MONTHS_ID = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"]
+QUAL_COLORS = {
+    "Premium": "#76944C",      
+    "Medium": "#FFD21F",       
+    "Pecah": "#C0B6AC",        
+}
+
+MONTHS_ID = [
+    "Januari","Februari","Maret","April","Mei","Juni",
+    "Juli","Agustus","September","Oktober","November","Desember"
+]
 MONTH_CAT = pd.CategoricalDtype(categories=MONTHS_ID, ordered=True)
 
 # ==========================================
@@ -58,28 +66,30 @@ def parse_harga_beras(file_like):
     return df.sort_values(["bulan", "kualitas"]).reset_index(drop=True), tahun
 
 # ==========================================
-# 3. STREAMLIT UI (FULL TIMES NEW ROMAN)
+# 3. STREAMLIT UI (FULL TIMES NEW ROMAN & STYLING)
 # ==========================================
 st.set_page_config(page_title="Analisis Harga Beras RCBD", layout="wide")
 
+# CSS untuk memaksakan Times New Roman di seluruh aplikasi
 st.markdown(f"""
 <style>
-    /* Mengatur Font Times New Roman untuk Seluruh Elemen UI */
+    /* Global Font Times New Roman */
     html, body, [class*="st-"], .stMarkdown, .stTable, .stDataFrame, 
     div[data-testid="stMetricValue"], div[data-testid="stMetricLabel"],
-    button, select, input, .stTabs, label {{
+    button, select, input, .stTabs, label, .stHeader {{
         font-family: "Times New Roman", Times, serif !important;
     }}
     
     .stApp {{ background-color: {CHART_PALETTE['cream']}; color: {CHART_PALETTE['dark_text']}; }}
     
+    /* Header Styling */
     .header-box {{
         background: linear-gradient(135deg, {CHART_PALETTE['moss_green']} 0%, {CHART_PALETTE['light_sage']} 100%);
         padding: 2.5rem; border-radius: 15px; color: white; text-align: center; margin-bottom: 2rem;
         box-shadow: 0 8px 20px rgba(0,0,0,0.1);
     }}
 
-    /* Desain Kartu Metrik */
+    /* Metric Card Styling (Agar tidak terpotong) */
     div[data-testid="stMetric"] {{
         background: white; border-radius: 12px; padding: 20px; 
         border-bottom: 6px solid {CHART_PALETTE['honey_yellow']};
@@ -88,28 +98,26 @@ st.markdown(f"""
     }}
     
     div[data-testid="stMetricValue"] {{ 
-        font-size: 2rem !important; font-weight: bold !important; 
+        font-size: 2.2rem !important; font-weight: bold !important; 
         color: {CHART_PALETTE['dark_text']};
     }}
 
-    /* Styling Tab */
-    .stTabs [aria-selected="true"] {{
-        background-color: {CHART_PALETTE['moss_green']} !important; color: white !important;
+    /* Sidebar Styling */
+    [data-testid="stSidebar"] {{
+        background-color: #f0f2f6;
     }}
 
-    /* Styling Box Informasi */
-    .info-card {{
-        background-color: white; padding: 20px; border-radius: 12px;
-        border-left: 8px solid {CHART_PALETTE['moss_green']};
-        box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+    /* Tab Styling */
+    .stTabs [aria-selected="true"] {{
+        background-color: {CHART_PALETTE['moss_green']} !important; color: white !important;
     }}
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown(f"""
     <div class="header-box">
-        <h1 style="margin:0; font-family: 'Times New Roman', serif; font-size: 3rem;">Laporan Analisis Harga Beras Tahunan</h1>
-        <p style="font-size: 1.2rem; font-style: italic; opacity: 0.9;">Metode Statistik: Randomized Complete Block Design (RCBD)</p>
+        <h1 style="margin:0; font-family: 'Times New Roman', serif; font-size: 3.2rem;">Laporan Analisis Harga Beras</h1>
+        <p style="font-size: 1.3rem; font-style: italic; opacity: 0.9;">Metode Statistik: Randomized Complete Block Design (RCBD)</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -125,6 +133,7 @@ if up:
 
     # --- Metrics Section ---
     m1, m2, m3, m4 = st.columns(4)
+    # Menampilkan value secara utuh (tidak terpotong)
     m1.metric("Periode Analisis", f"Tahun {tahun}")
     m2.metric("Rerata Premium", f"Rp {df_long[df_long['kualitas']=='Premium']['harga'].mean():,.0f}")
     m3.metric("Rerata Medium", f"Rp {df_long[df_long['kualitas']=='Medium']['harga'].mean():,.0f}")
@@ -133,32 +142,40 @@ if up:
     st.markdown("<br>", unsafe_allow_html=True)
 
     # --- Tabs Section ---
-    t1, t2, t3 = st.tabs(["📈 Visualisasi Tren", "📋 Matriks Data", "🔬 Statistik RCBD"])
+    t1, t2, t3 = st.tabs(["📊 Tren & Distribusi", "📋 Matriks Data", "🔬 Statistik RCBD"])
 
     with t1:
         st.markdown(f"### <span style='color:{CHART_PALETTE['moss_green']}'>Visualisasi Tren Harga Bulanan</span>", unsafe_allow_html=True)
-        fig_line = px.line(df_long, x="bulan", y="harga", color="kualitas", color_discrete_map=QUAL_COLORS, markers=True)
-        # Mengatur font grafik Plotly ke Times New Roman
-        fig_line.update_layout(font_family="Times New Roman", plot_bgcolor='rgba(0,0,0,0)')
+        
+        # Grafik Line dengan font Times New Roman
+        fig_line = px.line(df_long, x="bulan", y="harga", color="kualitas", 
+                           color_discrete_map=QUAL_COLORS, markers=True)
+        fig_line.update_layout(
+            font_family="Times New Roman",
+            title_font_family="Times New Roman",
+            plot_bgcolor='rgba(0,0,0,0)',
+            xaxis_title="Bulan",
+            yaxis_title="Harga (Rp)"
+        )
         st.plotly_chart(fig_line, use_container_width=True)
         
-        c1, c2 = st.columns(2)
-        with c1:
-            fig_box = px.box(df_long, x="kualitas", y="harga", color="kualitas", color_discrete_map=QUAL_COLORS, title="Distribusi Harga")
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            fig_box = px.box(df_long, x="kualitas", y="harga", color="kualitas", 
+                            color_discrete_map=QUAL_COLORS, title="Distribusi Harga")
             fig_box.update_layout(font_family="Times New Roman")
             st.plotly_chart(fig_box, use_container_width=True)
-        with c2:
+        with col_c2:
             avg_df = df_long.groupby("kualitas")['harga'].mean().reset_index()
-            fig_bar = px.bar(avg_df, x="kualitas", y="harga", color="kualitas", color_discrete_map=QUAL_COLORS, title="Rata-rata Harga")
+            fig_bar = px.bar(avg_df, x="kualitas", y="harga", color="kualitas", 
+                            color_discrete_map=QUAL_COLORS, title="Rata-rata Harga")
             fig_bar.update_layout(font_family="Times New Roman")
             st.plotly_chart(fig_bar, use_container_width=True)
 
     with t2:
         st.markdown("### 📋 Matriks Harga Beras")
-        try:
-            st.dataframe(df_wide.style.format("{:,.0f}").background_gradient(cmap='Greens'), use_container_width=True)
-        except:
-            st.dataframe(df_wide.style.format("{:,.0f}"), use_container_width=True)
+        # Tabel dengan font Times New Roman dan gradien
+        st.dataframe(df_wide.style.format("{:,.0f}").background_gradient(cmap='Greens'), use_container_width=True)
 
     with t3:
         st.markdown(f"### <span style='color:{CHART_PALETTE['moss_green']}'>Analisis Inferensial (ANOVA RCBD)</span>", unsafe_allow_html=True)
@@ -202,13 +219,6 @@ if up:
         st.table(pd.DataFrame(ph_results).style.format({
             "Selisih": "{:.2f}", "t-Stat": "{:.3f}", "p-Value": "{:.4e}", "p-Adj (Holm)": "{:.4e}"
         }))
-
-        # Kesimpulan
-        p_val_main = aov_table.loc["C(kualitas)", "PR(>F)"]
-        if p_val_main < 0.05:
-            st.success("**Kesimpulan Akhir:** Terdapat perbedaan harga yang signifikan antar kategori kualitas beras (p < 0.05).")
-        else:
-            st.warning("**Kesimpulan Akhir:** Tidak ditemukan perbedaan harga yang signifikan antar kualitas beras.")
 
 else:
     st.info("👋 Selamat Datang. Silakan unggah file CSV laporan BPS di sidebar untuk memulai analisis.")
