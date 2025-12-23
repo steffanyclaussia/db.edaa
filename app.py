@@ -58,16 +58,17 @@ def parse_harga_beras(file_like):
     return df.sort_values(["bulan", "kualitas"]).reset_index(drop=True), tahun
 
 # ==========================================
-# 3. STREAMLIT UI (FULL TIMES NEW ROMAN & CONTRAST TABLES)
+# 3. STREAMLIT UI (FULL TIMES NEW ROMAN)
 # ==========================================
 st.set_page_config(page_title="Analisis Harga Beras RCBD", layout="wide")
 
 st.markdown(f"""
 <style>
-    /* Mengatur Font Times New Roman Secara Global */
-    html, body, [class*="st-"], .stMarkdown, .stDataFrame, 
+    /* Mengatur Font Times New Roman Secara Global Tanpa Terkecuali */
+    html, body, [class*="st-"], .stMarkdown, .stTable, .stDataFrame, 
     div[data-testid="stMetricValue"], div[data-testid="stMetricLabel"],
-    button, select, input, .stTabs, label, .stHeader {{
+    div[data-testid="stMetricDelta"], button, select, input, .stTabs, 
+    label, .stHeader, summary, p, span, h1, h2, h3, h4 {{
         font-family: "Times New Roman", Times, serif !important;
     }}
     
@@ -88,16 +89,14 @@ st.markdown(f"""
         min-width: 280px !important;
     }}
 
-    /* PERBAIKAN TABEL: Memberikan kontras agar tidak menyatu dengan background krem */
-    .stTable, div[data-testid="stTable"] {{
+    /* Tabel Kontras (Latar Putih) */
+    .stTable, div[data-testid="stTable"], .stDataFrame {{
         background-color: #FFFFFF !important;
         border: 1px solid #D1D1D1 !important;
         border-radius: 10px !important;
-        padding: 10px !important;
         box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
     }}
     
-    /* Memastikan teks di dalam tabel tetap hitam pekat */
     .stTable td, .stTable th {{
         color: #1A1A1A !important;
         border-bottom: 1px solid #EEEEEE !important;
@@ -111,16 +110,16 @@ st.markdown(f"""
 
 st.markdown(f"""
     <div class="header-box">
-        <h1 style="margin:0; font-family: 'Times New Roman', serif; font-size: 3.2rem;">Laporan Analisis Harga Beras</h1>
-        <p style="font-size: 1.3rem; font-style: italic; opacity: 0.9;">Metode Statistik: Randomized Complete Block Design (RCBD)</p>
+        <h1 style="margin:0; font-family: 'Times New Roman', serif; font-size: 3.2rem; color: white;">Laporan Analisis Harga Beras</h1>
+        <p style="font-size: 1.3rem; font-style: italic; opacity: 0.9; font-family: 'Times New Roman', serif; color: white;">Metode Statistik: Randomized Complete Block Design (RCBD)</p>
     </div>
 """, unsafe_allow_html=True)
 
 with st.sidebar:
-    st.markdown("### 📂 Pengaturan Data")
+    st.markdown("<h3 style='font-family: \"Times New Roman\", serif;'>📂 Pengaturan Data</h3>", unsafe_allow_html=True)
     up = st.file_uploader("Unggah File CSV BPS", type=["csv"])
     st.divider()
-    st.caption("Font: Times New Roman")
+    st.caption("Font: Times New Roman | Palette: Moss Green")
 
 if up:
     df_long, tahun = parse_harga_beras(io.BytesIO(up.getvalue()))
@@ -139,23 +138,23 @@ if up:
     with t1:
         st.markdown(f"### <span style='color:{CHART_PALETTE['moss_green']}'>Visualisasi Tren Harga</span>", unsafe_allow_html=True)
         fig_line = px.line(df_long, x="bulan", y="harga", color="kualitas", color_discrete_map=QUAL_COLORS, markers=True)
-        fig_line.update_layout(font_family="Times New Roman", plot_bgcolor='rgba(0,0,0,0)')
+        # Menyeragamkan font di dalam grafik Plotly
+        fig_line.update_layout(font_family="Times New Roman", font_color="#1A1A1A", plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig_line, use_container_width=True)
         
         c1, c2 = st.columns(2)
         with c1:
             fig_box = px.box(df_long, x="kualitas", y="harga", color="kualitas", color_discrete_map=QUAL_COLORS)
-            fig_box.update_layout(font_family="Times New Roman")
+            fig_box.update_layout(font_family="Times New Roman", font_color="#1A1A1A")
             st.plotly_chart(fig_box, use_container_width=True)
         with c2:
             avg_df = df_long.groupby("kualitas")['harga'].mean().reset_index()
             fig_bar = px.bar(avg_df, x="kualitas", y="harga", color="kualitas", color_discrete_map=QUAL_COLORS)
-            fig_bar.update_layout(font_family="Times New Roman")
+            fig_bar.update_layout(font_family="Times New Roman", font_color="#1A1A1A")
             st.plotly_chart(fig_bar, use_container_width=True)
 
     with t2:
         st.markdown("### 📋 Matriks Harga Beras")
-        # Menggunakan st.dataframe dengan styling agar tetap ber-font Times New Roman dan memiliki kontras
         st.dataframe(df_wide.style.format("{:,.0f}").set_properties(**{'background-color': 'white', 'color': 'black'}), use_container_width=True)
 
     with t3:
@@ -167,7 +166,7 @@ if up:
         aov_table.index = ['C(kualitas)', 'C(bulan)', 'Residual']
         
         st.markdown("#### **Tabel Analisis Ragam (ANOVA)**")
-        # Menampilkan tabel statistik dengan latar putih bersih dan shadow melalui CSS class .stTable
+        
         st.table(aov_table.style.format({
             "sum_sq": "{:.6e}", "df": "{:.1f}", "F": "{:.6f}", "PR(>F)": "{:.6e}"
         }))
@@ -197,17 +196,15 @@ if up:
             res["p-Adj (Holm)"] = p_adj[i]
             res["Signifikan"] = "Ya" if rej[i] else "Tidak"
         
-        # Menampilkan tabel post-hoc dengan latar putih dan shadow
         st.table(pd.DataFrame(ph_results).style.format({
             "Selisih": "{:.2f}", "t-Stat": "{:.3f}", "p-Value": "{:.4e}", "p-Adj (Holm)": "{:.4e}"
         }))
 
-        # Hasil Akhir
         p_val_main = aov_table.loc["C(kualitas)", "PR(>F)"]
         if p_val_main < 0.05:
             st.success("**Kesimpulan Akhir:** Terdapat perbedaan harga yang signifikan antar kategori kualitas beras (p < 0.05).")
         else:
-            st.warning("**Kesimpulan Akhir:** Tidak ditemukan perbedaan harga yang signifikan.")
+            st.warning("**Kesimpulan Akhir:** Tidak ditemukan perbedaan harga yang signifikan antar kualitas beras.")
 
 else:
     st.info("👋 Silakan unggah file CSV laporan BPS untuk memulai analisis.")
