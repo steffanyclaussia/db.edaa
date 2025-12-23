@@ -59,7 +59,7 @@ def parse_harga_beras(file_like) -> tuple[pd.DataFrame, dict]:
                  if str(raw.iloc[month_row_idx, j]).strip() in MONTHS_ID}
     
     tahun = next((int(str(raw.iloc[r, c]).strip()) for r in range(max(0, month_row_idx-3), month_row_idx+1) 
-                  for c in range(raw.shape[1]) if str(raw.iloc[r, c]).strip().isdigit() and len(str(raw.iloc[r, c]).strip()) == 4), None)
+                  for c in range(raw.shape[1]) if str(raw.iloc[r, c]).strip().isdigit() and len(str(raw.iloc[r, c]).strip()) == 4), 2024)
 
     records = []
     for i in range(month_row_idx+1, raw.shape[0]):
@@ -86,132 +86,68 @@ st.set_page_config(page_title="Analisis Harga Beras RCBD", layout="wide")
 
 st.markdown(f"""
 <style>
-    /* Global Font Times New Roman */
     html, body, [class*="st-"], .stMarkdown, .stTable, .stDataFrame {{
         font-family: "Times New Roman", Times, serif !important;
     }}
-
-    .stApp {{ 
-        background-color: {CHART_PALETTE['cream']}; 
-        color: {CHART_PALETTE['dark_text']}; 
-    }}
-
-    /* Header & Sidebar */
+    .stApp {{ background-color: {CHART_PALETTE['cream']}; color: {CHART_PALETTE['dark_text']}; }}
     .header-box {{
         background: linear-gradient(135deg, {CHART_PALETTE['moss_green']} 0%, {CHART_PALETTE['light_sage']} 100%);
         padding: 2.5rem; border-radius: 20px; color: white; text-align: center; margin-bottom: 2rem;
         box-shadow: 0 10px 20px rgba(0,0,0,0.1);
     }}
-    
-    /* Metric Card */
     div[data-testid="stMetric"] {{
         background: white; border-radius: 15px; padding: 20px; 
         border-bottom: 6px solid {CHART_PALETTE['honey_yellow']};
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        min-width: 200px !important;
     }}
-    
-    div[data-testid="stMetricValue"] {{
-        font-size: 1.8rem !important; white-space: nowrap !important;
-    }}
-
-    /* Stats Card Container */
     .stats-card {{
-        background-color: white;
-        padding: 25px;
-        border-radius: 15px;
-        border: 1px solid {CHART_PALETTE['warm_grey']};
-        margin-bottom: 20px;
+        background-color: white; padding: 25px; border-radius: 15px;
+        border: 1px solid {CHART_PALETTE['warm_grey']}; margin-bottom: 20px;
     }}
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown(f"""
-    <div class="header-box">
-        <h1 style="font-family: 'Times New Roman', serif; font-size: 3rem; margin:0;">Dashboard Analisis Harga Beras</h1>
-        <p style="font-size: 1.3rem; font-style: italic; margin-top:10px;">Laporan Statistik Formal: Randomized Complete Block Design (RCBD)</p>
-    </div>
-""", unsafe_allow_html=True)
+st.markdown(f"""<div class="header-box">
+    <h1 style="margin:0;">Dashboard Analisis Harga Beras</h1>
+    <p style="font-size: 1.2rem; font-style: italic;">Laporan Statistik Formal: RCBD</p>
+</div>""", unsafe_allow_html=True)
 
 with st.sidebar:
     st.markdown("### 📄 Pengaturan Data")
-    up = st.file_uploader("Unggah File CSV (BPS)", type=["csv"])
-    st.divider()
-    st.markdown("### 💡 Informasi")
-    st.caption("Menggunakan metode RCBD untuk mengontrol variasi bulanan (Blok) terhadap perlakuan Kualitas.")
+    up = st.file_uploader("Unggah File CSV", type=["csv"])
 
 if up:
     df, meta = parse_harga_beras(io.BytesIO(up.getvalue()))
     wide_df = make_wide(df)
 
-    # Summary Metrics
     m1, m2, m3, m4 = st.columns(4)
-    with m1: st.metric(label="Periode Analisis", value=f"Tahun {meta['tahun'] if meta['tahun'] else '2024'}")
-    with m2: st.metric(label="Rata-rata Premium", value=f"Rp {df[df['Kualitas']=='Premium']['Harga'].mean():,.0f}")
-    with m3: st.metric(label="Rata-rata Medium", value=f"Rp {df[df['Kualitas']=='Medium']['Harga'].mean():,.0f}")
-    with m4: st.metric(label="Rata-rata Pecah", value=f"Rp {df[df['Kualitas']=='Pecah']['Harga'].mean():,.0f}")
-
-    st.markdown("<br>", unsafe_allow_html=True)
+    with m1: st.metric("Periode", f"Tahun {meta['tahun']}")
+    with m2: st.metric("Rerata Premium", f"Rp {df[df['Kualitas']=='Premium']['Harga'].mean():,.0f}")
+    with m3: st.metric("Rerata Medium", f"Rp {df[df['Kualitas']=='Medium']['Harga'].mean():,.0f}")
+    with m4: st.metric("Rerata Pecah", f"Rp {df[df['Kualitas']=='Pecah']['Harga'].mean():,.0f}")
 
     t1, t2, t3 = st.tabs(["📈 Tren & Distribusi", "📋 Matriks Data", "🔬 Statistik Mendalam"])
-
-    with t1:
-        fig_line = px.line(df, x="Bulan", y="Harga", color="Kualitas", color_discrete_map=QUAL_COLORS, markers=True, title="Visualisasi Tren Harga Bulanan")
-        fig_line.update_layout(font_family="Times New Roman", title_font_size=20)
-        st.plotly_chart(fig_line, use_container_width=True)
-        
-        c1, c2 = st.columns(2)
-        with c1:
-            fig_box = px.box(df, x="Kualitas", y="Harga", color="Kualitas", color_discrete_map=QUAL_COLORS, title="Analisis Sebaran Harga")
-            fig_box.update_layout(font_family="Times New Roman")
-            st.plotly_chart(fig_box, use_container_width=True)
-        with c2:
-            avg_df = df.groupby("Kualitas")["Harga"].mean().reset_index()
-            fig_bar = px.bar(avg_df, x="Kualitas", y="Harga", color="Kualitas", color_discrete_map=QUAL_COLORS, title="Perbandingan Harga Rata-rata")
-            fig_bar.update_layout(font_family="Times New Roman")
-            st.plotly_chart(fig_bar, use_container_width=True)
-
-    with t2:
-        st.markdown("### 📊 Matriks Harga Bulanan")
-        st.dataframe(wide_df.style.highlight_max(axis=1, color=CHART_PALETTE['light_sage']).format("{:,.0f}"), use_container_width=True)
 
     with t3:
         st.markdown("<h2 style='text-align: center;'>Analisis Inferensial (RCBD)</h2>", unsafe_allow_html=True)
         
-        st.markdown(f"""
-        <div class='stats-card'>
-            <h4 style='color:{CHART_PALETTE['moss_green']};'>Konteks Model</h4>
-            <p>Penelitian ini menggunakan <b>Rancangan Acak Kelompok (RCBD)</b> dengan model: <i>Harga ~ Kualitas + Bulan</i>. Bulan diperlakukan sebagai blok untuk meminimalkan bias musiman.</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Hitung ANOVA
+        # Penjelasan model
         long_complete = wide_df.reset_index().melt(id_vars=["Bulan"], var_name="Kualitas", value_name="Harga")
         model = ols('Harga ~ C(Kualitas) + C(Bulan)', data=long_complete).fit()
         aov_table = anova_lm(model, typ=2)
         
-        # Penyesuaian Nama Index sesuai permintaan
+        # PERBAIKAN FORMAT TABEL ANOVA
         aov_display = aov_table.copy()
         aov_display.index = ['C(kualitas)', 'C(bulan)', 'Residual']
         
         st.markdown("#### === ANOVA (harga ~ kualitas + bulan) ===")
-        
-        
-        
         st.table(aov_display.style.format({
-            "sum_sq": "{:.6e}",
-            "df": "{:.1f}",
-            "F": "{:.6f}",
-            "PR(>F)": "{:.6e}"
+            "sum_sq": "{:.6e}", "df": "{:.1f}", "F": "{:.6f}", "PR(>F)": "{:.6e}"
         }))
 
-        p_val = aov_table.loc["C(Kualitas)", "PR(>F)"]
-        f_stat = aov_table.loc["C(Kualitas)", "F"]
-
-        # Post-Hoc Test (Holm Adjustment)
-        st.markdown("#### === POST-HOC KUALITAS (kontrol bulan) + Holm ===")
+        # PERBAIKAN POST-HOC (HOLM)
+        st.markdown("#### === POST-HOC KUALITAS (Holm) ===")
         
-        # Definisi hipotesis t-test
         hypotheses = [
             ("Pecah - Medium", "C(Kualitas)[T.Pecah] = 0"),
             ("Premium - Medium", "C(Kualitas)[T.Premium] = 0"),
@@ -222,13 +158,18 @@ if up:
         raw_pvals = []
         for label, hyp in hypotheses:
             t_test = model.t_test(hyp)
+            # PERBAIKAN: Menggunakan .item() untuk mengekstrak nilai skalar dari array NumPy
+            diff_val = t_test.effect.item() if hasattr(t_test.effect, 'item') else float(t_test.effect)
+            t_val = t_test.tvalue.item() if hasattr(t_test.tvalue, 'item') else float(t_test.tvalue)
+            p_val = t_test.pvalue.item() if hasattr(t_test.pvalue, 'item') else float(t_test.pvalue)
+            
             ph_rows.append({
                 "Pasangan": label,
-                "diff": float(t_test.effect),
-                "t": float(t_test.tvalue),
-                "p": float(t_test.pvalue)
+                "diff": diff_val,
+                "t": t_val,
+                "p": p_val
             })
-            raw_pvals.append(float(t_test.pvalue))
+            raw_pvals.append(p_val)
             
         rej, p_adj, _, _ = multipletests(raw_pvals, alpha=0.05, method="holm")
         
@@ -239,23 +180,6 @@ if up:
         st.table(pd.DataFrame(ph_rows).style.format({
             "diff": "{:.4f}", "t": "{:.3f}", "p": "{:.6e}", "p_adj": "{:.6e}"
         }))
-
-        # Interpretasi Hipotesis
-        st.markdown("<br>", unsafe_allow_html=True)
-        if p_val < 0.05:
-            st.markdown(f"""
-            <div style='border-left: 10px solid {CHART_PALETTE['moss_green']}; background-color: #e8f5e9; padding: 20px;'>
-                <h4 style='color:#2e7d32; margin:0;'>Kesimpulan: Signifikan</h4>
-                <p style='margin:10px 0 0 0;'>Terdapat perbedaan harga yang nyata antar kualitas (p < 0.05). Hasil uji lanjut menunjukkan seluruh pasangan kualitas berbeda secara signifikan.</p>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div style='border-left: 10px solid #c62828; background-color: #ffeae8; padding: 20px;'>
-                <h4 style='color:#c62828; margin:0;'>Kesimpulan: Tidak Signifikan</h4>
-                <p style='margin:10px 0 0 0;'>Tidak ditemukan perbedaan harga yang cukup berarti antar kualitas.</p>
-            </div>
-            """, unsafe_allow_html=True)
-
+        
 else:
-    st.info("👋 Selamat Datang. Silakan unggah file CSV data harga beras melalui sidebar.")
+    st.info("👋 Silakan unggah file CSV data harga beras.")
