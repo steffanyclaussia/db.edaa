@@ -86,7 +86,7 @@ st.set_page_config(page_title="Analisis Harga Beras RCBD", layout="wide")
 st.markdown(f"""
 <style>
     /* Global Font Times New Roman */
-    html, body, [class*="st-"] {{
+    html, body, [class*="st-"], .stMarkdown, .stTable, .stDataFrame {{
         font-family: "Times New Roman", Times, serif !important;
     }}
 
@@ -95,43 +95,40 @@ st.markdown(f"""
         color: {CHART_PALETTE['dark_text']}; 
     }}
 
-    /* Sidebar */
-    [data-testid="stSidebar"] {{ background-color: {CHART_PALETTE['moss_green']}; }}
-    [data-testid="stSidebar"] * {{ color: white !important; font-family: "Times New Roman", serif !important; }}
-
-    /* Header */
+    /* Header & Sidebar */
     .header-box {{
         background: linear-gradient(135deg, {CHART_PALETTE['moss_green']} 0%, {CHART_PALETTE['light_sage']} 100%);
         padding: 2.5rem; border-radius: 20px; color: white; text-align: center; margin-bottom: 2rem;
         box-shadow: 0 10px 20px rgba(0,0,0,0.1);
     }}
     
-    /* FIX: Metric Card agar tidak terpotong */
+    /* Metric Card Fix */
     div[data-testid="stMetric"] {{
-        background: white; 
-        border-radius: 15px; 
-        padding: 20px; 
+        background: white; border-radius: 15px; padding: 20px; 
         border-bottom: 6px solid {CHART_PALETTE['honey_yellow']};
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        min-width: fit-content !important;
+        min-width: 200px !important;
     }}
     
-    /* Memastikan Value Metrik terlihat utuh dan besar */
     div[data-testid="stMetricValue"] {{
-        font-size: 1.8rem !important;
-        white-space: nowrap !important;
-        overflow: visible !important;
+        font-size: 1.8rem !important; white-space: nowrap !important;
     }}
 
-    /* Tab Styling */
-    .stTabs [aria-selected="true"] {{ background-color: {CHART_PALETTE['moss_green']} !important; color: white !important; }}
+    /* Gaya Khusus Tabel Statistik */
+    .stats-card {{
+        background-color: white;
+        padding: 25px;
+        border-radius: 15px;
+        border: 1px solid {CHART_PALETTE['warm_grey']};
+        margin-bottom: 20px;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown(f"""
     <div class="header-box">
         <h1 style="font-family: 'Times New Roman', serif; font-size: 3rem; margin:0;">Dashboard Analisis Harga Beras</h1>
-        <p style="font-size: 1.3rem; font-style: italic; margin-top:10px;">Metode Statistik: Randomized Complete Block Design (RCBD)</p>
+        <p style="font-size: 1.3rem; font-style: italic; margin-top:10px;">Laporan Statistik Formal: Randomized Complete Block Design (RCBD)</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -139,23 +136,18 @@ with st.sidebar:
     st.markdown("### 📄 Pengaturan Data")
     up = st.file_uploader("Unggah File CSV (BPS)", type=["csv"])
     st.divider()
-    st.caption("Dashboard ini menganalisis pengaruh kualitas terhadap harga dengan kontrol variasi bulanan (RCBD).")
+    st.caption("Font: Times New Roman | Palette: Moss Green & Honey Yellow")
 
 if up:
     df, meta = parse_harga_beras(io.BytesIO(up.getvalue()))
     wide_df = make_wide(df)
 
-    # RINGKASAN METRIK (Fixing the 'Tahun 2024' cutoff)
+    # Metrik Ringkasan
     m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        # Menampilkan teks Tahun secara utuh
-        st.metric(label="Periode Analisis", value=f"Tahun {meta['tahun'] if meta['tahun'] else '2024'}")
-    with m2: 
-        st.metric(label="Rata-rata Premium", value=f"Rp {df[df['Kualitas']=='Premium']['Harga'].mean():,.0f}")
-    with m3: 
-        st.metric(label="Rata-rata Medium", value=f"Rp {df[df['Kualitas']=='Medium']['Harga'].mean():,.0f}")
-    with m4: 
-        st.metric(label="Rata-rata Pecah", value=f"Rp {df[df['Kualitas']=='Pecah']['Harga'].mean():,.0f}")
+    with m1: st.metric(label="Periode Analisis", value=f"Tahun {meta['tahun'] if meta['tahun'] else '2024'}")
+    with m2: st.metric(label="Rata-rata Premium", value=f"Rp {df[df['Kualitas']=='Premium']['Harga'].mean():,.0f}")
+    with m3: st.metric(label="Rata-rata Medium", value=f"Rp {df[df['Kualitas']=='Medium']['Harga'].mean():,.0f}")
+    with m4: st.metric(label="Rata-rata Pecah", value=f"Rp {df[df['Kualitas']=='Pecah']['Harga'].mean():,.0f}")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -163,7 +155,7 @@ if up:
 
     with t1:
         fig_line = px.line(df, x="Bulan", y="Harga", color="Kualitas", color_discrete_map=QUAL_COLORS, markers=True, title="Visualisasi Tren Harga Bulanan")
-        fig_line.update_layout(font_family="Times New Roman")
+        fig_line.update_layout(font_family="Times New Roman", title_font_size=20)
         st.plotly_chart(fig_line, use_container_width=True)
         
         c1, c2 = st.columns(2)
@@ -178,22 +170,69 @@ if up:
             st.plotly_chart(fig_bar, use_container_width=True)
 
     with t2:
+        st.markdown("### 📊 Matriks Harga Bulanan")
         st.dataframe(wide_df.style.highlight_max(axis=1, color=CHART_PALETTE['light_sage']).format("{:,.0f}"), use_container_width=True)
-        st.download_button("📥 Ekspor Data (CSV)", df.to_csv(index=False), "data_beras.csv", "text/csv")
 
     with t3:
-        st.markdown("### 🔬 Uji Signifikansi ANOVA (RCBD)")
+        st.markdown("<h2 style='text-align: center;'>Analisis Inferensial (RCBD)</h2>", unsafe_allow_html=True)
+        
+        # Penjelasan Konteks
+        st.markdown(f"""
+        <div class='stats-card'>
+            <h4 style='color:{CHART_PALETTE['moss_green']};'>Konteks Model</h4>
+            <p>Penelitian ini menggunakan <b>Rancangan Acak Kelompok (RCBD)</b> untuk menguji apakah terdapat perbedaan harga yang signifikan antar kualitas beras (Premium, Medium, Pecah) dengan memperlakukan <b>Bulan</b> sebagai blok untuk mengontrol variasi musiman.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Hitung ANOVA
         long_complete = wide_df.reset_index().melt(id_vars=["Bulan"], var_name="Kualitas", value_name="Harga")
         model = ols('Harga ~ C(Kualitas) + C(Bulan)', data=long_complete).fit()
         aov_table = anova_lm(model, typ=2)
         aov_display = aov_table.rename(index={'C(Kualitas)': 'Kualitas (Perlakuan)', 'C(Bulan)': 'Bulan (Blok)', 'Residual': 'Error'})
-        st.table(aov_display.style.format("{:.4f}"))
+
+        # Tampilan Tabel ANOVA yang Menarik
+        col_left, col_right = st.columns([2, 1])
         
-        p_val = aov_table.loc["C(Kualitas)", "PR(>F)"]
+        with col_left:
+            st.markdown("#### Tabel Analisis Ragam (ANOVA)")
+            st.table(aov_display.style.format("{:.4f}").set_properties(**{
+                'background-color': 'white',
+                'color': CHART_PALETTE['dark_text'],
+                'border-color': CHART_PALETTE['warm_grey']
+            }))
+
+        with col_right:
+            st.markdown("#### Parameter Uji")
+            p_val = aov_table.loc["C(Kualitas)", "PR(>F)"]
+            f_stat = aov_table.loc["C(Kualitas)", "F"]
+            
+            st.markdown(f"""
+            <div style='background-color:{CHART_PALETTE['moss_green']}; color:white; padding:20px; border-radius:10px; text-align:center;'>
+                <small>P-Value (Kualitas)</small><br>
+                <b style='font-size:24px;'>{p_val:.5f}</b><br><br>
+                <small>F-Statistic</small><br>
+                <b style='font-size:24px;'>{f_stat:.2f}</b>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Interpretasi Visual
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("#### Interpretasi Hipotesis")
+        
         if p_val < 0.05:
-            st.success(f"**Signifikan**: Terdapat perbedaan harga nyata antar kualitas (p-value: {p_val:.4f}).")
+            st.markdown(f"""
+            <div style='border-left: 10px solid {CHART_PALETTE['moss_green']}; background-color: #e8f5e9; padding: 20px;'>
+                <h4 style='color:#2e7d32; margin:0;'>H<sub>1</sub> Diterima (Signifikan)</h4>
+                <p style='margin:10px 0 0 0;'>Terdapat bukti statistik yang sangat kuat bahwa <b>setidaknya satu kategori kualitas memiliki harga rata-rata yang berbeda secara nyata</b> dibandingkan kategori lainnya pada tingkat kepercayaan 95%.</p>
+            </div>
+            """, unsafe_allow_html=True)
         else:
-            st.warning(f"**Tidak Signifikan**: Tidak ditemukan perbedaan nyata (p-value: {p_val:.4f}).")
+            st.markdown(f"""
+            <div style='border-left: 10px solid #c62828; background-color: #ffeae8; padding: 20px;'>
+                <h4 style='color:#c62828; margin:0;'>H<sub>0</sub> Gagal Ditolak (Tidak Signifikan)</h4>
+                <p style='margin:10px 0 0 0;'>Tidak ditemukan perbedaan harga yang signifikan antar kualitas beras. Variasi harga yang diamati kemungkinan besar hanya disebabkan oleh fluktuasi acak.</p>
+            </div>
+            """, unsafe_allow_html=True)
 
 else:
-    st.info("Silakan unggah file CSV data harga beras untuk melihat dashboard.")
+    st.info("👋 Selamat Datang. Silakan unggah data CSV Anda melalui panel di samping kiri.")
