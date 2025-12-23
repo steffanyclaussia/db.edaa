@@ -29,8 +29,9 @@ MONTH_CAT = pd.CategoricalDtype(categories=MONTHS_ID, ordered=True)
 # ==========================================
 # 2. FUNGSI PEMROSESAN DATA
 # ==========================================
-def parse_harga_beras(file_like):
-    raw = pd.read_csv(file_like, header=None)
+def parse_harga_beras(source):
+    # Mendukung input berupa path string atau file-like object
+    raw = pd.read_csv(source, header=None)
     idx_bulan = raw.apply(lambda r: r.astype(str).str.contains(r"\bJanuari\b", case=False, na=False).any(), axis=1).idxmax()
     
     month_map = {j: str(raw.iloc[idx_bulan, j]).strip() for j in range(1, raw.shape[1]) 
@@ -64,24 +65,21 @@ st.set_page_config(page_title="Analisis Harga Beras RCBD", layout="wide")
 
 st.markdown(f"""
 <style>
-    /* Mengatur Font Times New Roman Secara Global Tanpa Terkecuali */
+    /* Mengatur Font Times New Roman Secara Global */
     html, body, [class*="st-"], .stMarkdown, .stTable, .stDataFrame, 
     div[data-testid="stMetricValue"], div[data-testid="stMetricLabel"],
-    div[data-testid="stMetricDelta"], button, select, input, .stTabs, 
-    label, .stHeader, summary, p, span, h1, h2, h3, h4 {{
+    button, select, input, .stTabs, label, p, span, h1, h2, h3, h4 {{
         font-family: "Times New Roman", Times, serif !important;
     }}
     
     .stApp {{ background-color: {CHART_PALETTE['cream']}; color: {CHART_PALETTE['dark_text']}; }}
     
-    /* Header Styling */
     .header-box {{
         background: linear-gradient(135deg, {CHART_PALETTE['moss_green']} 0%, {CHART_PALETTE['light_sage']} 100%);
         padding: 2.5rem; border-radius: 15px; color: white; text-align: center; margin-bottom: 2rem;
         box-shadow: 0 8px 20px rgba(0,0,0,0.1);
     }}
 
-    /* Metric Card */
     div[data-testid="stMetric"] {{
         background: white; border-radius: 12px; padding: 20px; 
         border-bottom: 6px solid {CHART_PALETTE['honey_yellow']};
@@ -89,17 +87,11 @@ st.markdown(f"""
         min-width: 280px !important;
     }}
 
-    /* Tabel Kontras (Latar Putih) */
     .stTable, div[data-testid="stTable"], .stDataFrame {{
         background-color: #FFFFFF !important;
         border: 1px solid #D1D1D1 !important;
         border-radius: 10px !important;
         box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
-    }}
-    
-    .stTable td, .stTable th {{
-        color: #1A1A1A !important;
-        border-bottom: 1px solid #EEEEEE !important;
     }}
 
     .stTabs [aria-selected="true"] {{
@@ -110,21 +102,37 @@ st.markdown(f"""
 
 st.markdown(f"""
     <div class="header-box">
-        <h1 style="margin:0; font-family: 'Times New Roman', serif; font-size: 3.2rem; color: white;">Laporan Analisis Harga Beras</h1>
-        <p style="font-size: 1.3rem; font-style: italic; opacity: 0.9; font-family: 'Times New Roman', serif; color: white;">Metode Statistik: Randomized Complete Block Design (RCBD)</p>
+        <h1 style="margin:0; font-size: 3.2rem; color: white;">Laporan Analisis Harga Beras</h1>
+        <p style="font-size: 1.3rem; font-style: italic; opacity: 0.9; color: white;">Sistem Otomasi Data - Randomized Complete Block Design (RCBD)</p>
     </div>
 """, unsafe_allow_html=True)
 
-with st.sidebar:
-    st.markdown("<h3 style='font-family: \"Times New Roman\", serif;'>📂 Pengaturan Data</h3>", unsafe_allow_html=True)
-    up = st.file_uploader("Unggah File CSV BPS", type=["csv"])
-    st.divider()
-    st.caption("Font: Times New Roman | Palette: Moss Green")
+# ==========================================
+# 4. LOGIKA AUTO-LOAD DATA
+# ==========================================
+data_source = None
+DEFAULT_FILE = "Data_HargaBeras.csv" # Nama file yang akan dicari otomatis
 
-if up:
-    df_long, tahun = parse_harga_beras(io.BytesIO(up.getvalue()))
+with st.sidebar:
+    st.markdown("### 📂 Pengaturan Data")
+    # Coba cek apakah file default ada
+    try:
+        with open(DEFAULT_FILE, "rb") as f:
+            data_source = DEFAULT_FILE
+            st.success(f"✅ Otomatis menggunakan: {DEFAULT_FILE}")
+    except FileNotFoundError:
+        st.warning(f"⚠️ {DEFAULT_FILE} tidak ditemukan.")
+    
+    up = st.file_uploader("Unggah File CSV Baru (Opsional)", type=["csv"])
+    if up is not None:
+        data_source = io.BytesIO(up.getvalue())
+        st.info("🔄 Menggunakan file yang baru diunggah.")
+
+if data_source:
+    df_long, tahun = parse_harga_beras(data_source)
     df_wide = df_long.pivot_table(index="bulan", columns="kualitas", values="harga").reindex(columns=QUAL_ORDER)
 
+    # Metrics
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Periode Analisis", f"Tahun {tahun}")
     m2.metric("Rerata Premium", f"Rp {df_long[df_long['kualitas']=='Premium']['harga'].mean():,.0f}")
@@ -132,25 +140,23 @@ if up:
     m4.metric("Rerata Pecah", f"Rp {df_long[df_long['kualitas']=='Pecah']['harga'].mean():,.0f}")
 
     st.markdown("<br>", unsafe_allow_html=True)
-
     t1, t2, t3 = st.tabs(["📈 Tren & Distribusi", "📋 Matriks Data", "🔬 Statistik RCBD"])
 
     with t1:
         st.markdown(f"### <span style='color:{CHART_PALETTE['moss_green']}'>Visualisasi Tren Harga</span>", unsafe_allow_html=True)
         fig_line = px.line(df_long, x="bulan", y="harga", color="kualitas", color_discrete_map=QUAL_COLORS, markers=True)
-        # Menyeragamkan font di dalam grafik Plotly
         fig_line.update_layout(font_family="Times New Roman", font_color="#1A1A1A", plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig_line, use_container_width=True)
         
         c1, c2 = st.columns(2)
         with c1:
             fig_box = px.box(df_long, x="kualitas", y="harga", color="kualitas", color_discrete_map=QUAL_COLORS)
-            fig_box.update_layout(font_family="Times New Roman", font_color="#1A1A1A")
+            fig_box.update_layout(font_family="Times New Roman")
             st.plotly_chart(fig_box, use_container_width=True)
         with c2:
             avg_df = df_long.groupby("kualitas")['harga'].mean().reset_index()
             fig_bar = px.bar(avg_df, x="kualitas", y="harga", color="kualitas", color_discrete_map=QUAL_COLORS)
-            fig_bar.update_layout(font_family="Times New Roman", font_color="#1A1A1A")
+            fig_bar.update_layout(font_family="Times New Roman")
             st.plotly_chart(fig_bar, use_container_width=True)
 
     with t2:
@@ -159,14 +165,14 @@ if up:
 
     with t3:
         st.markdown(f"### <span style='color:{CHART_PALETTE['moss_green']}'>Analisis Inferensial (ANOVA RCBD)</span>", unsafe_allow_html=True)
-        
-        # Model ANOVA
         model = ols('harga ~ C(kualitas) + C(bulan)', data=df_long).fit()
         aov_table = anova_lm(model, typ=2)
         aov_table.index = ['C(kualitas)', 'C(bulan)', 'Residual']
         
         st.markdown("#### **Tabel Analisis Ragam (ANOVA)**")
         
+        
+
         st.table(aov_table.style.format({
             "sum_sq": "{:.6e}", "df": "{:.1f}", "F": "{:.6f}", "PR(>F)": "{:.6e}"
         }))
@@ -200,11 +206,10 @@ if up:
             "Selisih": "{:.2f}", "t-Stat": "{:.3f}", "p-Value": "{:.4e}", "p-Adj (Holm)": "{:.4e}"
         }))
 
-        p_val_main = aov_table.loc["C(kualitas)", "PR(>F)"]
-        if p_val_main < 0.05:
-            st.success("**Kesimpulan Akhir:** Terdapat perbedaan harga yang signifikan antar kategori kualitas beras (p < 0.05).")
+        if aov_table.loc["C(kualitas)", "PR(>F)"] < 0.05:
+            st.success("**Kesimpulan:** Terdapat perbedaan harga signifikan antar kualitas beras (p < 0.05).")
         else:
-            st.warning("**Kesimpulan Akhir:** Tidak ditemukan perbedaan harga yang signifikan antar kualitas beras.")
+            st.warning("**Kesimpulan:** Tidak ditemukan perbedaan harga signifikan antar kualitas beras.")
 
 else:
-    st.info("👋 Silakan unggah file CSV laporan BPS untuk memulai analisis.")
+    st.info("👋 Selamat Datang. Silakan letakkan file 'Data_HargaBeras.csv' di folder aplikasi atau unggah file secara manual.")
